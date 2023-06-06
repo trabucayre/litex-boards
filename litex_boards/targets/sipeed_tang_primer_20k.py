@@ -31,13 +31,17 @@ from litedram.phy import GW2DDRPHY
 # CRG ----------------------------------------------------------------------------------------------
 
 class _CRG(LiteXModule):
-    def __init__(self, platform, sys_clk_freq, with_video_pll=False):
+    def __init__(self, platform, sys_clk_freq, with_video_pll=False, ddr_rate="1:2"):
         self.rst        = Signal()
         self.cd_sys     = ClockDomain()
         self.cd_por     = ClockDomain()
         self.cd_init    = ClockDomain()
-        self.cd_sys2x   = ClockDomain()
-        self.cd_sys2x_i = ClockDomain()
+        if ddr_rate == "1:2":
+            self.cd_sys2x   = ClockDomain()
+            self.cd_sys2x_i = ClockDomain()
+        else:
+            self.cd_sys4x   = ClockDomain()
+            self.cd_sys4x_i = ClockDomain()
 
         # # #
 
@@ -58,20 +62,35 @@ class _CRG(LiteXModule):
         self.pll = pll = GW2APLL(devicename=platform.devicename, device=platform.device)
         self.comb += pll.reset.eq(~por_done)
         pll.register_clkin(clk27, 27e6)
-        pll.create_clkout(self.cd_sys2x_i, 2*sys_clk_freq)
-        self.specials += [
-            Instance("DHCEN",
-                i_CLKIN  = self.cd_sys2x_i.clk,
-                i_CE     = self.stop,
-                o_CLKOUT = self.cd_sys2x.clk),
-            Instance("CLKDIV",
-                p_DIV_MODE = "2",
-                i_CALIB    = 0,
-                i_HCLKIN   = self.cd_sys2x.clk,
-                i_RESETN   = ~self.reset,
-                o_CLKOUT   = self.cd_sys.clk),
-            AsyncResetSynchronizer(self.cd_sys, ~pll.locked | self.reset),
-        ]
+        pll.create_clkout(self.cd_sys2x_i if ddr_rate == "1:2" else self.cd_sys4x_i, sys_clk_freq * (2 if ddr_rate == "1:2" else 4))
+        if ddr_rate == "1:2":
+            self.specials += [
+                Instance("DHCEN",
+                    i_CLKIN  = self.cd_sys2x_i.clk,
+                    i_CE     = self.stop,
+                    o_CLKOUT = self.cd_sys2x.clk),
+                Instance("CLKDIV",
+                    p_DIV_MODE = "2",
+                    i_CALIB    = 0,
+                    i_HCLKIN   = self.cd_sys2x.clk,
+                    i_RESETN   = ~self.reset,
+                    o_CLKOUT   = self.cd_sys.clk),
+                AsyncResetSynchronizer(self.cd_sys, ~pll.locked | self.reset),
+            ]
+        else:
+            self.specials += [
+                Instance("DHCEN",
+                    i_CLKIN  = self.cd_sys4x_i.clk,
+                    i_CE     = self.stop,
+                    o_CLKOUT = self.cd_sys4x.clk),
+                Instance("CLKDIV",
+                    p_DIV_MODE = "4",
+                    i_CALIB    = 0,
+                    i_HCLKIN   = self.cd_sys4x.clk,
+                    i_RESETN   = ~self.reset,
+                    o_CLKOUT   = self.cd_sys.clk),
+                AsyncResetSynchronizer(self.cd_sys, ~pll.locked | self.reset),
+            ]
 
         # Init clock domain
         self.comb += self.cd_init.clk.eq(clk27)
@@ -106,6 +125,7 @@ class BaseSoC(SoCCore):
         eth_ip              = "192.168.1.50",
         eth_dynamic_ip      = False,
         dock                = "standard",
+        ddr_rate            = "1:2",
         **kwargs):
 
         assert dock in ["standard", "lite"]
@@ -116,7 +136,7 @@ class BaseSoC(SoCCore):
             with_led_chaser = False # No leds on core board nor on dock lite.
 
         # CRG --------------------------------------------------------------------------------------
-        self.crg = _CRG(platform, sys_clk_freq, with_video_pll=with_video_terminal)
+        self.crg = _CRG(platform, sys_clk_freq, with_video_pll=with_video_terminal, ddr_rate=ddr_rate)
 
         # SoCCore ----------------------------------------------------------------------------------
         SoCCore.__init__(self, platform, sys_clk_freq, ident="LiteX SoC on Tang Primer 20K", **kwargs)
@@ -126,14 +146,15 @@ class BaseSoC(SoCCore):
         if not self.integrated_main_ram_size:
             self.ddrphy = GW2DDRPHY(
                 pads         = PHYPadsReducer(platform.request("ddram"), [0, 1]),
-                sys_clk_freq = sys_clk_freq
+                sys_clk_freq = sys_clk_freq,
+                nphases      = 2 if ddr_rate == "1:2" else 4,
             )
             self.ddrphy.settings.rtt_nom = "disabled"
             self.comb += self.crg.stop.eq(self.ddrphy.init.stop)
             self.comb += self.crg.reset.eq(self.ddrphy.init.reset)
             self.add_sdram("sdram",
                 phy           = self.ddrphy,
-                module        = MT41J128M16(sys_clk_freq, "1:2"),
+                module        = MT41J128M16(sys_clk_freq, ddr_rate),
                 l2_cache_size = 0
             )
             # ./sipeed_tang_primer_20k.py --cpu-variant=lite --uart-name=crossover+uartbone --csr-csv=csr.csv --build --load
@@ -211,6 +232,7 @@ def main():
     from litex.build.parser import LiteXArgumentParser
     parser = LiteXArgumentParser(platform=sipeed_tang_primer_20k.Platform, description="LiteX SoC on Tang Primer 20K.")
     parser.add_target_argument("--dock",         default="standard",       help="Dock version (standard (default) or lite.")
+    parser.add_target_argument("--ddr_rate",     default="1:2",            help="DDR rate (1:2(default) or 1:4)")
     parser.add_target_argument("--flash",        action="store_true",      help="Flash Bitstream.")
     parser.add_target_argument("--sys-clk-freq", default=48e6, type=float, help="System clock frequency.")
     sdopts = parser.target_group.add_mutually_exclusive_group()
@@ -234,6 +256,7 @@ def main():
         eth_ip              = args.eth_ip,
         eth_dynamic_ip      = args.eth_dynamic_ip,
         dock                = args.dock,
+        ddr_rate            = args.ddr_rate,
         **parser.soc_argdict
     )
     if args.with_spi_sdcard:
