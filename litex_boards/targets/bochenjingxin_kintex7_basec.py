@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+
+#
+# This file is part of LiteX-Boards.
+#
+# Copyright (c) 2025 Yuji Yamada <yamada@arch.cs.titech.ac.jp>
+# SPDX-License-Identifier: BSD-2-Clause
+
 from migen import *
 
 from litex.gen import *
