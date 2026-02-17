@@ -18,7 +18,6 @@ from litex.build.openfpgaloader import OpenFPGALoader
 _io = [
     # Clk / Rst.
     ("clk50",  0, Pins("V22"), IOStandard("LVCMOS33")),
-    ("rst",    0, Pins("AA13"),  IOStandard("LVCMOS15")), #EX_KEY.0
 
     # Serial.
     ("serial", 0,
@@ -85,6 +84,14 @@ _io = [
         Subsignal("reset_n", Pins("L6"),       IOStandard("SSTL15"),  Misc("DRIVE=12")),
         Misc("PULL_MODE=NONE BANK_VCCIO=1.5"),
     ),
+]
+
+_io_60k = [
+    ("rst",    0, Pins("AA13"),  IOStandard("LVCMOS15")), #EX_KEY.0
+]
+
+_io_138k = [
+    ("rst",    0, Pins("AA13"),  IOStandard("LVCMOS33")), #EX_KEY.0
 ]
 
 # Connectors ---------------------------------------------------------------------------------------
@@ -310,8 +317,17 @@ class Platform(GowinPlatform):
     default_clk_name   = "clk50"
     default_clk_period = 1e9/50e6
 
-    def __init__(self, dock="standard", toolchain="gowin"):
-        GowinPlatform.__init__(self, "GW5AT-LV60PG484AC1/I0", _io, _connectors, toolchain=toolchain, devicename="GW5AT-60B")
+    def __init__(self, dock="standard", toolchain="gowin", device="GW5AT-60B"):
+        assert device in ["GW5AT-60B", "GW5AST-138C"]
+        device_part = {
+            "GW5AT-60B":   "GW5AT-LV60PG484AC1/I0",
+            "GW5AST-138C": "GW5AST-LV138PG484AC1/I0",
+        }[device]
+        # TODO: different (32-bit total) DDR3 on GW5AST-138C
+        GowinPlatform.__init__(self, device_part, _io, _connectors, toolchain=toolchain, devicename=device)
+        self.add_extension({
+            "GW5AT-60B":   _io_60k,
+            "GW5AST-138C": _io_138k}[device])
         self.add_extension(_dock_io)
         self.add_connector(_dock_connectors)
 
