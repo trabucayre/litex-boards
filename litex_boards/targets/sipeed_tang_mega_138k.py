@@ -85,7 +85,8 @@ class _CRG(LiteXModule):
         # PLL
         self.pll = pll = GW5APLL(devicename=platform.devicename, device=platform.device)
         # GW5AST-138 PLL limits (Gowin UG306, section 2.3).
-        pll.vco_freq_range = (650e6, 1300e6)
+        if platform.devicename == "GW5AST-138B":
+            pll.vco_freq_range = (650e6, 1300e6)
         self.comb += pll.reset.eq(~por_done | self.rst)
         pll.register_clkin(clk50, 50e6)
         if with_ddr3:
@@ -95,7 +96,8 @@ class _CRG(LiteXModule):
             pll.create_clkout(self.cd_sys, sys_clk_freq)
         if cpu_clk_freq:
             pll.create_clkout(self.cd_cpu, cpu_clk_freq, with_reset=False)
-        platform.toolchain.additional_cst_commands.append("INS_LOC \"PLL\" PLL_R[0]") # Magic incantation for Gowin-AE350 CPU :)
+        if platform.devicename == "GW5AST-138B":
+            platform.toolchain.additional_cst_commands.append("INS_LOC \"PLL\" PLL_R[0]") # Magic incantation for Gowin-AE350 CPU :)
 
         # SDRAM clock
         if with_sdram:
@@ -160,7 +162,7 @@ class _CRG(LiteXModule):
 # BaseSoC ------------------------------------------------------------------------------------------
 
 class BaseSoC(SoCCore):
-    def __init__(self, sys_clk_freq=50e6,
+    def __init__(self, sys_clk_freq=50e6, device="GW5AST-138B",
         with_ethernet          = True,
         with_etherbone         = False,
         eth_ip                 = "192.168.1.50",
@@ -182,7 +184,7 @@ class BaseSoC(SoCCore):
         assert ddr3_rate in ("1:2", "1:4")
         ddr3_nphases = int(ddr3_rate[-1])
 
-        platform = sipeed_tang_mega_138k.Platform(toolchain="gowin")
+        platform = sipeed_tang_mega_138k.Platform(toolchain="gowin", device=device)
 
         assert not with_sdram or (sdram_model in ["sipeed", "mister"])
 
@@ -291,6 +293,11 @@ def main():
     from litex.build.parser import LiteXArgumentParser
     parser = LiteXArgumentParser(platform=sipeed_tang_mega_138k.Platform, description="LiteX SoC on Tang Mega 138K.")
     parser.add_target_argument("--flash",          action="store_true",      help="Flash bitstream.")
+    parser.add_target_argument("--device",         default="GW5AST-138B",
+        choices=[
+			"GW5AST-138B",
+			"GW5AT-60B",
+	], help="Device.")
     parser.add_target_argument("--sys-clk-freq",   default=50e6, type=float, help="System clock frequency.")
 
     # Memory.
@@ -326,6 +333,7 @@ def main():
 
     soc = BaseSoC(
         sys_clk_freq           = args.sys_clk_freq,
+        device                 = args.device,
         with_video_colorbars   = args.with_video_colorbars,
         with_video_terminal    = args.with_video_terminal,
         with_video_framebuffer = args.with_video_framebuffer,
