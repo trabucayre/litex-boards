@@ -153,7 +153,7 @@ class _CRG(LiteXModule):
 # BaseSoC ------------------------------------------------------------------------------------------
 
 class BaseSoC(SoCCore):
-    def __init__(self, sys_clk_freq=50e6,
+    def __init__(self, sys_clk_freq=50e6, device="GW5AST-138B",
         with_ethernet          = True,
         with_etherbone         = False,
         eth_ip                 = "192.168.1.50",
@@ -171,7 +171,7 @@ class BaseSoC(SoCCore):
         with_rgb_led           = False,
         with_buttons           = True,
         **kwargs):
-        platform = sipeed_tang_mega_138k.Platform(toolchain="gowin")
+        platform = sipeed_tang_mega_138k.Platform(toolchain="gowin", device=device)
 
         assert not with_sdram or (sdram_model in ["sipeed", "mister"])
 
@@ -276,6 +276,11 @@ def main():
     from litex.build.parser import LiteXArgumentParser
     parser = LiteXArgumentParser(platform=sipeed_tang_mega_138k.Platform, description="LiteX SoC on Tang Mega 138K.")
     parser.add_target_argument("--flash",          action="store_true",      help="Flash bitstream.")
+    parser.add_target_argument("--device",         default="GW5AST-138B",
+        choices=[
+			"GW5AST-138B",
+			"GW5AT-60B"
+	], help="Device.")
     parser.add_target_argument("--sys-clk-freq",   default=50e6, type=float, help="System clock frequency.")
 
     # Memory.
@@ -309,6 +314,7 @@ def main():
 
     soc = BaseSoC(
         sys_clk_freq           = args.sys_clk_freq,
+        device                 = args.device,
         with_video_colorbars   = args.with_video_colorbars,
         with_video_terminal    = args.with_video_terminal,
         with_video_framebuffer = args.with_video_framebuffer,
